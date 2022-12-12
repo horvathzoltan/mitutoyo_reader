@@ -4,40 +4,16 @@
 #include <QThread>
 #include <libusb-1.0/libusb.h>
 
-void CheckOpenError(int err)
-{
-    switch(err){
-    case 0: return;
-    case LIBUSB_ERROR_NO_MEM:qDebug() << "memory allocation failure"; break;
-    case LIBUSB_ERROR_ACCESS:qDebug() << "the user has insufficient permissions";break;
-    case LIBUSB_ERROR_NO_DEVICE:qDebug() << "the device has been disconnected";break;
-    default:qDebug() << "other failure";break;
-    }
-    throw;
-}
-
-void CheckTransferError(int l){
-    if(l>=0) return; //on success, the number of bytes actually transferred
-    switch(l){
-    case LIBUSB_ERROR_TIMEOUT:qDebug() << "the transfer timed out"; break;
-    case LIBUSB_ERROR_PIPE:qDebug() << "the control request was not supported by the device";break;
-    case LIBUSB_ERROR_NO_DEVICE:qDebug() << "the device has been disconnected";break;
-    case LIBUSB_ERROR_BUSY:qDebug() << "called from event handling context";break;
-    case LIBUSB_ERROR_INVALID_PARAM:qDebug() << "the transfer size is larger than the operating system and/or hardware can support (see Transfer length limitations)";break;
-    default:qDebug() << "other failure";break;
-    }
-}
-//init
 /*
-LIBUSB_SUCCESS on success
-LIBUSB_ERROR_INVALID_PARAM if the option or arguments are invalid
-LIBUSB_ERROR_NOT_SUPPORTED if the option is valid but not supported on this platform
-LIBUSB_ERROR_NOT_FOUND if LIBUSB_OPTION_USE_USBDK is valid on this platform but UsbDk is not available
+add a new file in /etc/udev/rules.d named usb.rules
+SUBSYSTEM=="usb", MODE="0666"
 */
 
 int main(int argc, char *argv[])
 {
-    QCoreApplication a(argc, argv);
+    Q_UNUSED(argc)
+    Q_UNUSED(argv)
+    //QCoreApplication a(argc, argv); // nem kell eventloop
 
     libusb_context *context = nullptr;
     libusb_device **list = nullptr;
@@ -46,39 +22,17 @@ int main(int argc, char *argv[])
     ssize_t count = 0;
 
     rc = libusb_init(&context);
-    assert(rc == 0);
+    if(rc!=0){
+        qDebug() << "LIBUSB_ERROR";
+        return 1;
+    }
 
     count = libusb_get_device_list(context, &list);
-//    assert(count > 0);
+    if(count<LIBUSB_SUCCESS){
+        qDebug() << libusb_error(count);
+        return 1;
+    }
 
-    // d = usb.core.find(idVendor=0x0fe7, idProduct=0x4001)
-    /*
-d.reset()
-d.set_configuration(1)
-c = d.get_active_configuration()
-epin = d.get_active_configuration().interfaces()[0].endpoints()[0]
-bmRequestType=0x40 # Vendor Host-to-Device
-bRequest=0x01
-wValue=0xA5A5
-wIndex=0
-d.ctrl_transfer(bmRequestType, bRequest, wValue, wIndex)
-
-bmRequestType=0xC0 # Vendor Device-to-Host
-bRequest=0x02
-wValue=0
-wIndex=0
-length=1
-res1 = d.ctrl_transfer(bmRequestType, bRequest, wValue, wIndex, length)
-log.debug("Device Vendor resp: {}".format(res1))
-
-bmRequestType=0x40 #0b01000000
-bRequest=0x03
-wValue=0
-wIndex=0
-data = b"1\r"
-
-d.ctrl_transfer(bmRequestType, bRequest, wValue, wIndex, data)
-*/
     int devIx = -1;
     for (ssize_t i = 0; i < count; ++i)
     {
@@ -86,15 +40,17 @@ d.ctrl_transfer(bmRequestType, bRequest, wValue, wIndex, data)
         libusb_device_descriptor desc = {};
 
         rc = libusb_get_device_descriptor(device, &desc);
-        assert(rc == 0);
+        if(rc<LIBUSB_SUCCESS){
+            qDebug() << libusb_error(count);
+            return 1;
+        }
 
-        //printf("Vendor:Device = %04x:%04x\n", desc.idVendor, desc.idProduct);
         QString msg = QStringLiteral("Vendor:Device = %1:%2\n").arg(desc.idVendor, 4, 16, QChar('0')).arg(desc.idProduct, 4, 16,QChar('0'));
 
         if(desc.idVendor==0x0fe7 && desc.idProduct==0x4001)
         {
             devIx = static_cast<int>(i);
-            msg+=QStringLiteral(" <- Mitutoyo: %1").arg(devIx);
+            msg+=QStringLiteral(" <- Mitutoyo");
         }
 
         qDebug() << msg;
@@ -106,17 +62,12 @@ d.ctrl_transfer(bmRequestType, bRequest, wValue, wIndex, data)
         libusb_device_handle *handle = nullptr;
 
         //handle = libusb_open_device_with_vid_pid(context, 0x0fe7, 0x4001);
-
         rc = libusb_open(device, &handle);
-
-        //d.reset()
-        //d.set_configuration(1)
-        //c = d.get_active_configuration()
-        //epin = d.get_active_configuration().interfaces()[0].endpoints()[0]
 
         libusb_reset_device(handle);
         libusb_set_configuration(handle, 1);
-        if (libusb_kernel_driver_active(handle, 0) == 1) { //find out if kernel driver is attached
+        bool isAttachedToKernel = libusb_kernel_driver_active(handle, 0) == 1;
+        if(isAttachedToKernel) {
                libusb_detach_kernel_driver(handle, 0); //detach it
            }
         libusb_claim_interface(handle, 0); //claim interface 0 (the first) of device (desired device FX3 has only 1)
