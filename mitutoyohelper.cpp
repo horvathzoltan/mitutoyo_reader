@@ -20,7 +20,7 @@ MitutoyoHelper::Response MitutoyoHelper::Parse(const QByteArray &b)
     else{
         r.errorCode=ErrorCode::Success;
         r.measuringItem = b[2];
-        r.data = QString::fromLatin1(b.mid(3));
+        r.data = QString::fromLatin1(b.mid(3, b.length()-4));
     }
     return r;
 }

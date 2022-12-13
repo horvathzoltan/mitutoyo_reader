@@ -214,13 +214,14 @@ bool UsbHelper::MitutoyoRead(libusb_device *device, QByteArray *m)
     int BytesRead, counter = 0;
     //QString m;
     while (libusb_bulk_transfer(handle, (IN_ENDPOINT_ID | LIBUSB_ENDPOINT_IN), DataIn, sizeof(DataIn), &BytesRead, 0) == 0 && counter++ < 5)
-    {
+    {           
         char* DataIn2 = static_cast<char*>(static_cast<void *>(DataIn));
-        QString msg = QString::fromLocal8Bit(DataIn2, BytesRead);
-        if(m) *m+=msg;
-        if(msg.endsWith('\r')) break;
+        //QByteArray msg(DataIn2, BytesRead);
+        if(m) m->append(DataIn2, BytesRead);//+=msg;
+        if(DataIn2[BytesRead-1]=='\r') break;
     }
 
+    delete[] DataIn;
     libusb_release_interface(handle, 0);
     rc = libusb_reset_device(handle);
     if(prevAttachedToKernel && isDetachedToKernel){
