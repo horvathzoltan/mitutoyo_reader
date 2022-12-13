@@ -1,5 +1,53 @@
 #include "usbhelper.h"
 
+const qint16 UsbHelper::MITUTOYO_VENDOR = 0x0fe7;
+const qint16 UsbHelper::MITUTOYO_PRODUCT = 0x4001;
+
+bool UsbHelper::SendConfig(libusb_device_handle* handle, const ControlPacket &p, unsigned int timeout)
+{
+    uint16_t wLength = 0;
+    unsigned char* u = nullptr;
+
+    if(p.data!=nullptr && !p.data.isEmpty()){
+        const char* e = p.data.constData();
+        const unsigned char* u1 = reinterpret_cast<const unsigned char*>(e);
+        u = const_cast<unsigned char*>(u1);
+        wLength = p.data.length();
+    }
+
+    int rc = libusb_control_transfer(
+                handle, p.c.bmRequestType, p.c.bRequest,
+                            p.c.wValue, p.c.wIndex,
+                            u, wLength, timeout);
+    if(rc<0){
+        qDebug()<<libusb_error_name(rc);
+        return false;
+    }
+    return true;
+}
+
+bool UsbHelper::ReadConfig(libusb_device_handle* handle, const ControlPacket &p, unsigned int timeout, QByteArray *a)
+{
+    unsigned char u[10];
+
+    int rc = libusb_control_transfer(
+                handle, p.c.bmRequestType, p.c.bRequest,
+                            p.c.wValue, p.c.wIndex,
+                            u, p.c.wLength, timeout);
+    if(rc<0){
+        qDebug()<<libusb_error_name(rc);
+        return false;
+    }
+
+    const char* e = reinterpret_cast<const char*>(u);
+
+    if(a) a->setRawData(e, rc);
+
+    //QByteArray a(e, rc);
+
+    return true;
+}
+
 UsbHelper::UsbHelper(){
     int rc = 0;
     rc = libusb_init(&_context);
@@ -17,11 +65,9 @@ UsbHelper::~UsbHelper()
 }
 
 
-
-QList<libusb_device*> UsbHelper::FindDevices(qint16 vendor, qint16 product )
+bool UsbHelper::FindDevices(qint16 vendor, qint16 product, QList<libusb_device*>* d )
 {
-    if(!_context)
-        return {};
+    if(!_context) return false;
     libusb_device **list = nullptr;
 
     int rc = 0;
@@ -30,11 +76,11 @@ QList<libusb_device*> UsbHelper::FindDevices(qint16 vendor, qint16 product )
     count = libusb_get_device_list(_context, &list);
     if(count<LIBUSB_SUCCESS){
         qDebug() << libusb_error(count);
-        return {};
+        return false;
     }
 
     //int devIx = -1;
-    QList<libusb_device*> deviceList;
+    //QList<libusb_device*> deviceList;
 
     for (ssize_t i = 0; i < count; ++i)
     {
@@ -44,21 +90,184 @@ QList<libusb_device*> UsbHelper::FindDevices(qint16 vendor, qint16 product )
         rc = libusb_get_device_descriptor(device, &desc);
         if(rc!=LIBUSB_SUCCESS){
             qDebug() << libusb_error(rc);
-            return {};
+            return false;
         }
 
         QString msg = QStringLiteral("Vendor:Device = %1:%2\n").arg(desc.idVendor, 4, 16, QChar('0')).arg(desc.idProduct, 4, 16,QChar('0'));
 
-        if(desc.idVendor==0x0fe7 && desc.idProduct==0x4001)
-        //if(desc.idVendor==vendor && desc.idProduct==product)
+        //if(desc.idVendor==0x0fe7 && desc.idProduct==0x4001)
+        if(desc.idVendor==vendor && desc.idProduct==product)
         {
             //devIx = static_cast<int>(i);
             msg+=QStringLiteral(" <- Mitutoyo");
-            deviceList.append(device);
+            if(d)d->append(device);
         }
 
         qDebug() << msg;
     }
-    return deviceList;
+    return true;
 }
+
+bool UsbHelper::MitutoyoRead(libusb_device *device, QString *m)
+{
+    libusb_device_handle *handle = nullptr;
+
+    int rc = 0;
+
+    //handle = libusb_open_device_with_vid_pid(context, 0x0fe7, 0x4001);
+    rc = libusb_open(device, &handle);
+    if(rc!=LIBUSB_SUCCESS){
+        qDebug() << libusb_error(rc);
+        return false;
+    }
+
+    rc = libusb_reset_device(handle);
+    if(rc!=LIBUSB_SUCCESS){
+        qDebug() << libusb_error(rc);
+        return false;
+    }
+
+    libusb_set_configuration(handle, 1);
+    if(rc!=LIBUSB_SUCCESS){
+        qDebug() << libusb_error(rc);
+        return false;
+    }
+
+    bool prevAttachedToKernel;
+    rc = libusb_kernel_driver_active(handle, 0);
+    if(rc==0){
+        prevAttachedToKernel = false;
+    }
+    else if(rc==1){
+         prevAttachedToKernel = true;
+    }
+    else{
+        qDebug() << libusb_error(rc);
+        return 1;
+    }
+
+    bool isDetachedToKernel;
+    if(prevAttachedToKernel){
+       rc = libusb_detach_kernel_driver(handle, 0); //detach it
+       if(rc!=LIBUSB_SUCCESS){
+           qDebug() << libusb_error(rc);
+           return false;
+       }
+       isDetachedToKernel=true;
+   }
+
+    rc = libusb_claim_interface(handle, 0); //claim interface 0 (the first) of device (desired device FX3 has only 1)
+    if(rc!=LIBUSB_SUCCESS){
+        qDebug() << libusb_error(rc);
+        if(prevAttachedToKernel && isDetachedToKernel){
+            rc = libusb_attach_kernel_driver(handle, 0); //attach it
+        }
+        return false;
+    }
+
+    UsbHelper::ControlPacket p1 {
+        .c = {
+            .bmRequestType = LIBUSB_ENDPOINT_OUT|LIBUSB_REQUEST_TYPE_VENDOR|LIBUSB_RECIPIENT_DEVICE,
+            .bRequest=0x01,
+            .wValue=0xA5A5,
+            .wIndex=0},
+                .data = {}
+    };
+
+    UsbHelper::ControlPacket p2 {
+        .c = {
+            .bmRequestType = LIBUSB_ENDPOINT_IN|LIBUSB_REQUEST_TYPE_VENDOR|LIBUSB_RECIPIENT_DEVICE,
+            .bRequest=0x02,
+            .wValue=0x00,
+            .wIndex=0,
+            .wLength=1}, //1 byteot beolvas
+                .data = {}
+    };
+
+    UsbHelper::ControlPacket p3 {
+        .c = {
+            .bmRequestType = LIBUSB_ENDPOINT_OUT|LIBUSB_REQUEST_TYPE_VENDOR|LIBUSB_RECIPIENT_DEVICE,
+            .bRequest=0x03,
+            .wValue=0x00,
+            .wIndex=0},
+                .data = {"1\r"}
+    };
+
+    SendConfig(handle, p1, 100);
+    QByteArray inBytes;
+    ReadConfig(handle, p2, 1000, &inBytes); // beolvasás
+    SendConfig(handle, p3, 100);
+
+    //0x40;// # Vendor Host-to-Device
+//    uint8_t bmRequestType=
+//            LIBUSB_ENDPOINT_OUT|LIBUSB_REQUEST_TYPE_VENDOR|LIBUSB_RECIPIENT_DEVICE;
+//    uint8_t bRequest=0x01;
+//    uint16_t wValue=0xA5A5;
+//    uint16_t wIndex=0;
+//    unsigned int timeout = 100;
+
+//    rc = libusb_control_transfer(handle, bmRequestType, bRequest,
+//                            wValue, wIndex,
+//                            nullptr, 0, timeout);
+//    //CheckTransferError(rc);
+
+//    qDebug() << "libusb_control_transfer 0x40 ok:" << rc;
+
+//    bmRequestType=//0xc0;# Vendor Device-to-Host
+//            LIBUSB_ENDPOINT_IN|LIBUSB_REQUEST_TYPE_VENDOR|LIBUSB_RECIPIENT_DEVICE;
+//    bRequest=0x02;
+//    wValue=0;
+//    wIndex=0;
+
+//    rc = libusb_control_transfer(handle, bmRequestType, bRequest,
+//                            wValue, wIndex,
+//                                 nullptr, 0, timeout);
+//    //CheckTransferError(rc);
+
+//    qDebug() << "libusb_control_transfer 0x40 ok:" << rc;
+
+//    bmRequestType=
+//            LIBUSB_ENDPOINT_OUT|LIBUSB_REQUEST_TYPE_VENDOR|LIBUSB_RECIPIENT_DEVICE;
+//    bRequest=0x03;
+//    wValue=0;
+//    wIndex=0;
+//    unsigned char data[3] = {'1','\r', '\0'};
+//    uint16_t wLength = 2;
+
+//    rc = libusb_control_transfer(handle, bmRequestType, bRequest,
+//                            wValue, wIndex,
+//                            data, wLength, timeout);
+//    //CheckTransferError(rc);
+
+//    qDebug() << "libusb_control_transfer 0x40 ok:" << rc;
+
+
+
+    //
+
+
+    unsigned char* DataIn = new unsigned char[512]; //data to read
+    constexpr auto IN_ENDPOINT_ID = 1;
+    int BytesRead, counter = 0;
+    //QString m;
+    while (libusb_bulk_transfer(handle, (IN_ENDPOINT_ID | LIBUSB_ENDPOINT_IN), DataIn, sizeof(DataIn), &BytesRead, 0) == 0 && counter++ < 5)
+    {
+        char* DataIn2 = static_cast<char*>(static_cast<void *>(DataIn));
+        QString msg = QString::fromLocal8Bit(DataIn2, BytesRead);
+        if(m) *m+=msg;
+        if(msg.endsWith('\r')) break;
+    }
+
+    //qDebug() << "m: " << m << Qt::endl;
+
+    libusb_release_interface(handle, 0);
+    rc = libusb_reset_device(handle);
+    if(prevAttachedToKernel && isDetachedToKernel){
+        rc = libusb_attach_kernel_driver(handle, 0); //attach it
+    }
+    libusb_close(handle);
+    return true;
+}
+
+
 
