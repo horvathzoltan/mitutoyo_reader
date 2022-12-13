@@ -1,3 +1,5 @@
+#include "mitutoyohelper.h"
+
 #include <QCoreApplication>
 #include <QDebug>
 #include <QString>
@@ -13,6 +15,7 @@ https://libusb.sourceforge.io/api-1.0/libusb_api.html
 #include <libusb-1.0/libusb.h>
 sudo apt-get install libusb-1.0-0-dev
 LIBS += -lusb-1.0
+//http://www.mitutoyokorea.com/upload/manual/99MAM029A.pdf
 */
 
 int main(int argc, char *argv[])
@@ -24,25 +27,34 @@ int main(int argc, char *argv[])
 
     QList<libusb_device*> devices;
     bool ok1 = usbHelper.FindDevices(
-                UsbHelper::MITUTOYO_VENDOR,UsbHelper::MITUTOYO_PRODUCT,
+                MitutoyoHelper::VENDOR,
+                MitutoyoHelper::PRODUCT,
                 &devices);
 
     if(!ok1){
         qDebug() << "Cannot found devices";
         return 0;
     }
+
     if(devices.isEmpty()){
         qDebug() << "No Mitutoyo devide found";
         return 0;
     }
 
-    QString msg;
+    QByteArray msg;
     bool ok = usbHelper.MitutoyoRead(devices[0], &msg);
     if(!ok){
         qDebug() << "Cannot read device";
         return 0;
     }
-    qDebug() << "m: " << msg << Qt::endl;
+
+    MitutoyoHelper::Response r = MitutoyoHelper::Parse(msg);
+    if(r.errorCode==MitutoyoHelper::ErrorCode::Success){
+        qDebug() << "m: " << r.data << Qt::endl;
+    } else{
+        qDebug() << "err: " << MitutoyoHelper::ErrorCodeToString(r.errorCode) << Qt::endl;
+    }
+
     return 0;
 }
 

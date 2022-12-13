@@ -12,22 +12,18 @@ public:
         //uint16_t wLength;
         //unsigned int timeout;
     };
+
 private:
     libusb_context* _context;
 
     bool SendConfig(libusb_device_handle* handle, const ControlPacket& c, unsigned int timeout);
     bool ReadConfig(libusb_device_handle* handle, const ControlPacket& c, unsigned int timeout, QByteArray *a);
 public:
-
-
-    static const qint16 MITUTOYO_VENDOR;
-    static const qint16 MITUTOYO_PRODUCT;
-
     UsbHelper();
     ~UsbHelper();
 
     bool FindDevices(qint16 vendor, qint16 product, QList<libusb_device*>* d);
-    bool MitutoyoRead(libusb_device* device, QString* m);
+    bool MitutoyoRead(libusb_device* device, QByteArray* m);
 };
 
 #endif // USBHELPER_H

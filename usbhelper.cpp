@@ -1,8 +1,5 @@
 #include "usbhelper.h"
 
-const qint16 UsbHelper::MITUTOYO_VENDOR = 0x0fe7;
-const qint16 UsbHelper::MITUTOYO_PRODUCT = 0x4001;
-
 bool UsbHelper::SendConfig(libusb_device_handle* handle, const ControlPacket &p, unsigned int timeout)
 {
     uint16_t wLength = 0;
@@ -22,7 +19,7 @@ bool UsbHelper::SendConfig(libusb_device_handle* handle, const ControlPacket &p,
     if(rc<0){
         qDebug()<<libusb_error_name(rc);
         return false;
-    }
+    }    
     return true;
 }
 
@@ -75,7 +72,7 @@ bool UsbHelper::FindDevices(qint16 vendor, qint16 product, QList<libusb_device*>
 
     count = libusb_get_device_list(_context, &list);
     if(count<LIBUSB_SUCCESS){
-        qDebug() << libusb_error(count);
+        qDebug() << libusb_error_name(count);
         return false;
     }
 
@@ -89,7 +86,7 @@ bool UsbHelper::FindDevices(qint16 vendor, qint16 product, QList<libusb_device*>
 
         rc = libusb_get_device_descriptor(device, &desc);
         if(rc!=LIBUSB_SUCCESS){
-            qDebug() << libusb_error(rc);
+            qDebug() << libusb_error_name(rc);
             return false;
         }
 
@@ -108,7 +105,7 @@ bool UsbHelper::FindDevices(qint16 vendor, qint16 product, QList<libusb_device*>
     return true;
 }
 
-bool UsbHelper::MitutoyoRead(libusb_device *device, QString *m)
+bool UsbHelper::MitutoyoRead(libusb_device *device, QByteArray *m)
 {
     libusb_device_handle *handle = nullptr;
 
@@ -117,19 +114,19 @@ bool UsbHelper::MitutoyoRead(libusb_device *device, QString *m)
     //handle = libusb_open_device_with_vid_pid(context, 0x0fe7, 0x4001);
     rc = libusb_open(device, &handle);
     if(rc!=LIBUSB_SUCCESS){
-        qDebug() << libusb_error(rc);
+        qDebug() << libusb_error_name(rc);
         return false;
     }
 
     rc = libusb_reset_device(handle);
     if(rc!=LIBUSB_SUCCESS){
-        qDebug() << libusb_error(rc);
+        qDebug() << libusb_error_name(rc);
         return false;
     }
 
     libusb_set_configuration(handle, 1);
     if(rc!=LIBUSB_SUCCESS){
-        qDebug() << libusb_error(rc);
+        qDebug() << libusb_error_name(rc);
         return false;
     }
 
@@ -142,15 +139,15 @@ bool UsbHelper::MitutoyoRead(libusb_device *device, QString *m)
          prevAttachedToKernel = true;
     }
     else{
-        qDebug() << libusb_error(rc);
-        return 1;
+        qDebug() << libusb_error_name(rc);
+        return false;
     }
 
     bool isDetachedToKernel;
     if(prevAttachedToKernel){
        rc = libusb_detach_kernel_driver(handle, 0); //detach it
        if(rc!=LIBUSB_SUCCESS){
-           qDebug() << libusb_error(rc);
+           qDebug() << libusb_error_name(rc);
            return false;
        }
        isDetachedToKernel=true;
@@ -158,14 +155,14 @@ bool UsbHelper::MitutoyoRead(libusb_device *device, QString *m)
 
     rc = libusb_claim_interface(handle, 0); //claim interface 0 (the first) of device (desired device FX3 has only 1)
     if(rc!=LIBUSB_SUCCESS){
-        qDebug() << libusb_error(rc);
+        qDebug() << libusb_error_name(rc);
         if(prevAttachedToKernel && isDetachedToKernel){
             rc = libusb_attach_kernel_driver(handle, 0); //attach it
         }
         return false;
     }
 
-    UsbHelper::ControlPacket p1 {
+    UsbHelper::ControlPacket p1 { // Vendor Host-to-Device
         .c = {
             .bmRequestType = LIBUSB_ENDPOINT_OUT|LIBUSB_REQUEST_TYPE_VENDOR|LIBUSB_RECIPIENT_DEVICE,
             .bRequest=0x01,
@@ -174,7 +171,7 @@ bool UsbHelper::MitutoyoRead(libusb_device *device, QString *m)
                 .data = {}
     };
 
-    UsbHelper::ControlPacket p2 {
+    UsbHelper::ControlPacket p2 { // Vendor Device-to-Host
         .c = {
             .bmRequestType = LIBUSB_ENDPOINT_IN|LIBUSB_REQUEST_TYPE_VENDOR|LIBUSB_RECIPIENT_DEVICE,
             .bRequest=0x02,
@@ -184,7 +181,7 @@ bool UsbHelper::MitutoyoRead(libusb_device *device, QString *m)
                 .data = {}
     };
 
-    UsbHelper::ControlPacket p3 {
+    UsbHelper::ControlPacket p3 { // Vendor Host-to-Device
         .c = {
             .bmRequestType = LIBUSB_ENDPOINT_OUT|LIBUSB_REQUEST_TYPE_VENDOR|LIBUSB_RECIPIENT_DEVICE,
             .bRequest=0x03,
@@ -193,58 +190,24 @@ bool UsbHelper::MitutoyoRead(libusb_device *device, QString *m)
                 .data = {"1\r"}
     };
 
-    SendConfig(handle, p1, 100);
+    bool ok = SendConfig(handle, p1, 100);
+    if(!ok){
+        qDebug() << "Cannot send package1";
+        return false;
+    }
+
     QByteArray inBytes;
-    ReadConfig(handle, p2, 1000, &inBytes); // beolvasás
-    SendConfig(handle, p3, 100);
+    ok = ReadConfig(handle, p2, 1000, &inBytes); // beolvasás
+    if(!ok){
+        qDebug() << "Cannot send package2";
+        return false;
+    }
 
-    //0x40;// # Vendor Host-to-Device
-//    uint8_t bmRequestType=
-//            LIBUSB_ENDPOINT_OUT|LIBUSB_REQUEST_TYPE_VENDOR|LIBUSB_RECIPIENT_DEVICE;
-//    uint8_t bRequest=0x01;
-//    uint16_t wValue=0xA5A5;
-//    uint16_t wIndex=0;
-//    unsigned int timeout = 100;
-
-//    rc = libusb_control_transfer(handle, bmRequestType, bRequest,
-//                            wValue, wIndex,
-//                            nullptr, 0, timeout);
-//    //CheckTransferError(rc);
-
-//    qDebug() << "libusb_control_transfer 0x40 ok:" << rc;
-
-//    bmRequestType=//0xc0;# Vendor Device-to-Host
-//            LIBUSB_ENDPOINT_IN|LIBUSB_REQUEST_TYPE_VENDOR|LIBUSB_RECIPIENT_DEVICE;
-//    bRequest=0x02;
-//    wValue=0;
-//    wIndex=0;
-
-//    rc = libusb_control_transfer(handle, bmRequestType, bRequest,
-//                            wValue, wIndex,
-//                                 nullptr, 0, timeout);
-//    //CheckTransferError(rc);
-
-//    qDebug() << "libusb_control_transfer 0x40 ok:" << rc;
-
-//    bmRequestType=
-//            LIBUSB_ENDPOINT_OUT|LIBUSB_REQUEST_TYPE_VENDOR|LIBUSB_RECIPIENT_DEVICE;
-//    bRequest=0x03;
-//    wValue=0;
-//    wIndex=0;
-//    unsigned char data[3] = {'1','\r', '\0'};
-//    uint16_t wLength = 2;
-
-//    rc = libusb_control_transfer(handle, bmRequestType, bRequest,
-//                            wValue, wIndex,
-//                            data, wLength, timeout);
-//    //CheckTransferError(rc);
-
-//    qDebug() << "libusb_control_transfer 0x40 ok:" << rc;
-
-
-
-    //
-
+    ok = SendConfig(handle, p3, 100);
+    if(!ok){
+        qDebug() << "Cannot send package3";
+        return false;
+    }
 
     unsigned char* DataIn = new unsigned char[512]; //data to read
     constexpr auto IN_ENDPOINT_ID = 1;
@@ -258,8 +221,6 @@ bool UsbHelper::MitutoyoRead(libusb_device *device, QString *m)
         if(msg.endsWith('\r')) break;
     }
 
-    //qDebug() << "m: " << m << Qt::endl;
-
     libusb_release_interface(handle, 0);
     rc = libusb_reset_device(handle);
     if(prevAttachedToKernel && isDetachedToKernel){
@@ -268,6 +229,7 @@ bool UsbHelper::MitutoyoRead(libusb_device *device, QString *m)
     libusb_close(handle);
     return true;
 }
+
 
 
 
