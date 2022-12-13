@@ -36,7 +36,9 @@ LIBS += -L/home/anti/pizero/sysroot/usr/lib/arm-linux-gnueabihf/ -lusb-1.0
 LIBS += -L/home/anti/pizero/sysroot/opt/vc/lib/ -lmmal -lmmal_core -lmmal_util -lmmal_vc_client -lmmal_components -lvchiq_arm -lvcsm -lcontainers -lvcos -lbcm_host
 #INCLUDEPATH += /home/anti/raspi/sysroot/usr/include/raspicam
 }
-# LIBS += -lusb-1.0
+else: unix:!android:{
+ LIBS += -lusb-1.0
+}
 
 #INCLUDEPATH +=
 
