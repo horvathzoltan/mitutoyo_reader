@@ -13,6 +13,8 @@ SUBSYSTEM=="usb", MODE="0666"
 
 https://libusb.sourceforge.io/api-1.0/libusb_api.html
 #include <libusb-1.0/libusb.h>
+pi:
+sudo apt-get install libusb-1.0-0
 sudo apt-get install libusb-1.0-0-dev
 LIBS += -lusb-1.0
 //http://www.mitutoyokorea.com/upload/manual/99MAM029A.pdf
@@ -42,7 +44,7 @@ int main(int argc, char *argv[])
     }
 
     QByteArray msg;
-    bool ok = usbHelper.MitutoyoRead(devices[0], &msg);
+    bool ok = usbHelper.MitutoyoRead(devices[0], &msg, 15);
     if(!ok){
         qDebug() << "Cannot read device";
         return 0;
@@ -50,9 +52,9 @@ int main(int argc, char *argv[])
 
     MitutoyoHelper::Response r = MitutoyoHelper::Parse(msg);
     if(r.errorCode==MitutoyoHelper::ErrorCode::Success){
-        qDebug() << "m: " << r.data << Qt::endl;
+        qDebug() << "m: " << r.data << endl;
     } else{
-        qDebug() << "err: " << MitutoyoHelper::ErrorCodeToString(r.errorCode) << Qt::endl;
+        qDebug() << "err: " << MitutoyoHelper::ErrorCodeToString(r.errorCode) << endl;
     }
 
     return 0;

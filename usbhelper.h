@@ -23,7 +23,7 @@ public:
     ~UsbHelper();
 
     bool FindDevices(qint16 vendor, qint16 product, QList<libusb_device*>* d);
-    bool MitutoyoRead(libusb_device* device, QByteArray* m);
+    bool MitutoyoRead(libusb_device* device, QByteArray* m, int n);
 };
 
 #endif // USBHELPER_H

@@ -82,7 +82,7 @@ bool UsbHelper::FindDevices(qint16 vendor, qint16 product, QList<libusb_device*>
     for (ssize_t i = 0; i < count; ++i)
     {
         libusb_device *device = list[i];
-        libusb_device_descriptor desc = {};
+        libusb_device_descriptor desc;
 
         rc = libusb_get_device_descriptor(device, &desc);
         if(rc!=LIBUSB_SUCCESS){
@@ -105,8 +105,12 @@ bool UsbHelper::FindDevices(qint16 vendor, qint16 product, QList<libusb_device*>
     return true;
 }
 
-bool UsbHelper::MitutoyoRead(libusb_device *device, QByteArray *m)
+bool UsbHelper::MitutoyoRead(libusb_device *device, QByteArray *m, int n)
 {
+    if(!m) return false;
+    if(n<5) return false;
+    if(n>100) return false;
+
     libusb_device_handle *handle = nullptr;
 
     int rc = 0;
@@ -190,7 +194,7 @@ bool UsbHelper::MitutoyoRead(libusb_device *device, QByteArray *m)
                 .data = {"1\r"}
     };
 
-    bool ok = SendConfig(handle, p1, 100);
+    bool ok = SendConfig(handle, p1, 200);
     if(!ok){
         qDebug() << "Cannot send package1";
         return false;
@@ -203,25 +207,39 @@ bool UsbHelper::MitutoyoRead(libusb_device *device, QByteArray *m)
         return false;
     }
 
-    ok = SendConfig(handle, p3, 100);
+    ok = SendConfig(handle, p3, 200);
     if(!ok){
         qDebug() << "Cannot send package3";
         return false;
     }
 
-    unsigned char* DataIn = new unsigned char[512]; //data to read
-    constexpr auto IN_ENDPOINT_ID = 1;
-    int BytesRead, counter = 0;
-    //QString m;
-    while (libusb_bulk_transfer(handle, (IN_ENDPOINT_ID | LIBUSB_ENDPOINT_IN), DataIn, sizeof(DataIn), &BytesRead, 0) == 0 && counter++ < 5)
-    {           
-        char* DataIn2 = static_cast<char*>(static_cast<void *>(DataIn));
-        //QByteArray msg(DataIn2, BytesRead);
-        if(m) m->append(DataIn2, BytesRead);//+=msg;
-        if(DataIn2[BytesRead-1]=='\r') break;
+    int size = 512;
+    unsigned char* readBuffer = new unsigned char[size]; //data to read
+    //constexpr auto IN_ENDPOINT_ID = 1;
+    //unsigned char endpoint = (endpoint | LIBUSB_ENDPOINT_IN) ;
+    int readBytes = 0;
+    int counter = 0;
+    unsigned char* p = readBuffer;
+    int r = 0;
+
+    libusb_config_descriptor *cd;
+    libusb_get_active_config_descriptor(device, &cd);
+    uint8_t endpoint = cd->interface->altsetting[0].endpoint[0].bEndpointAddress;
+
+    while (counter++ < n) {
+        int a = libusb_bulk_transfer(handle, endpoint, p, size, &readBytes, 200);
+        if(a!=LIBUSB_SUCCESS) continue;
+        if(readBytes==0) continue;
+        p+=readBytes;
+        r+=readBytes;
+        size-=readBytes;
+        if(p[readBytes-1]=='\r') break;
     }
 
-    delete[] DataIn;
+    if(m) m->append(reinterpret_cast<char*>(readBuffer), r);
+    qDebug() <<"in:" << QString(*m);
+
+    delete[] readBuffer;
     libusb_release_interface(handle, 0);
     rc = libusb_reset_device(handle);
     if(prevAttachedToKernel && isDetachedToKernel){

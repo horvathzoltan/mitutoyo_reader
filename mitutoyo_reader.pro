@@ -19,15 +19,31 @@ SOURCES += \
         mitutoyohelper.cpp \
         usbhelper.cpp
 
-LIBS += -lusb-1.0
-
-INCLUDEPATH +=
-
-# Default rules for deployment.
-qnx: target.path = /tmp/$${TARGET}/bin
-else: unix:!android: target.path = /opt/$${TARGET}/bin
-!isEmpty(target.path): INSTALLS += target
-
 HEADERS += \
     mitutoyohelper.h \
     usbhelper.h
+
+contains(QMAKESPEC,.*linux-rasp-pi\d*-.*){
+    message(rpi)
+    CONFIG += rpi
+}
+
+unix:rpi:{
+message(LIBS added for raspberry_pi)
+#LIBS += -L/home/anti/raspi/sysroot/usr/lib -lraspicam -lraspicam_cv
+#LIBS += -L/home/anti/raspi/sysroot/usr/lib/lib -lopencv_dnn -lopencv_gapi -lopencv_highgui -lopencv_ml -lopencv_objdetect -lopencv_photo -lopencv_stitching -lopencv_video -lopencv_videoio -lopencv_imgcodecs -lopencv_calib3d -lopencv_features2d -lopencv_flann -lopencv_imgproc -lopencv_core
+LIBS += -L/home/anti/pizero/sysroot/usr/lib/arm-linux-gnueabihf/ -lusb-1.0
+LIBS += -L/home/anti/pizero/sysroot/opt/vc/lib/ -lmmal -lmmal_core -lmmal_util -lmmal_vc_client -lmmal_components -lvchiq_arm -lvcsm -lcontainers -lvcos -lbcm_host
+#INCLUDEPATH += /home/anti/raspi/sysroot/usr/include/raspicam
+}
+# LIBS += -lusb-1.0
+
+#INCLUDEPATH +=
+
+# Default rules for deployment.
+qnx: target.path = /tmp/$${TARGET}/bin
+else: unix:rpi: target.path = /home/pi/$${TARGET}/bin
+else: unix:!android: target.path = /opt/$${TARGET}/bin
+!isEmpty(target.path): INSTALLS += target
+
+
