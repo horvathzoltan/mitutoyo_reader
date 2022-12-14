@@ -44,7 +44,7 @@ int main(int argc, char *argv[])
     }
 
     QByteArray msg;
-    bool ok = usbHelper.MitutoyoRead(devices[0], &msg, 1000, 0, 128);
+    bool ok = usbHelper.MitutoyoRead(devices[0], &msg, 1000, 100, 64);
     if(!ok){
         qDebug() << "Cannot read device";
         return 0;

@@ -223,14 +223,17 @@ bool UsbHelper::MitutoyoRead(libusb_device *device, QByteArray *m, unsigned int 
     int r = 0;
 
     unsigned int counterMax = n/endpoint.bInterval;
-
     if(n1>0) QThread::msleep(n1);
 
+    auto t2 = endpoint.bInterval*2;
+    auto t2Max = endpoint.bInterval*4;
+    int timeouts = 0;
     while (counter++ < counterMax) {
         int a = libusb_bulk_transfer(handle, endpoint.bEndpointAddress,
                                      p, endpoint.wMaxPacketSize, &readBytes,
-                                     endpoint.bInterval);
-        if(a!=LIBUSB_SUCCESS) continue;
+                                     t2);
+        if(a==LIBUSB_ERROR_TIMEOUT && t2<t2Max) {timeouts++;t2*=1.2;}
+        if(a!=LIBUSB_SUCCESS) continue;        
         if(readBytes==0) continue;
         if(freeSize<readBytes) break;
         bool isExit = p[readBytes-1]=='\r';
@@ -238,10 +241,9 @@ bool UsbHelper::MitutoyoRead(libusb_device *device, QByteArray *m, unsigned int 
         r+=readBytes;
         freeSize-=readBytes;
         if(isExit) break;
-    }
-
+    }     
     if(m) m->append(reinterpret_cast<char*>(readBuffer), r);
-    qDebug() <<"in:" << QString(*m);
+    qDebug() <<"in:" << QString(*m) << " counter:" << counter <<" timeouts:"<<timeouts <<" t:"<<t2;
 
     delete[] readBuffer;
     libusb_release_interface(handle, 0);
