@@ -8,7 +8,7 @@
 #include <libusb-1.0/libusb.h>
 
 /*
-add a new file in /etc/udev/rules.d named usb.rules
+add a new file in /etc/udev/rules.d/usb.rules
 SUBSYSTEM=="usb", MODE="0666"
 
 https://libusb.sourceforge.io/api-1.0/libusb_api.html
@@ -44,7 +44,7 @@ int main(int argc, char *argv[])
     }
 
     QByteArray msg;
-    bool ok = usbHelper.MitutoyoRead(devices[0], &msg, 15);
+    bool ok = usbHelper.MitutoyoRead(devices[0], &msg, 1000, 0, 128);
     if(!ok){
         qDebug() << "Cannot read device";
         return 0;
