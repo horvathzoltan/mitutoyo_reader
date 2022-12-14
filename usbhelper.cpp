@@ -202,12 +202,12 @@ bool UsbHelper::MitutoyoRead(libusb_device *device, QByteArray *m, unsigned int 
         return false;
     }
 
-//    QByteArray inBytes;
-//    ok = ReadConfig(handle, p2, 1000, &inBytes); // beolvasás
-//    if(!ok){
-//        qDebug() << "Cannot send package2";
-//        return false;
-//    }
+    QByteArray inBytes;
+    ok = ReadConfig(handle, p2, 1000, &inBytes); // beolvasás
+    if(!ok){
+        qDebug() << "Cannot send package2";
+        return false;
+    }
 
     ok = SendConfig(handle, p3, 200);
     if(!ok){
